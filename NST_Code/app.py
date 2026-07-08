@@ -1,4 +1,5 @@
 import os
+import logging
 import torch
 from flask import Flask, render_template, request, redirect, url_for, send_from_directory
 from flask_wtf import FlaskForm
@@ -9,6 +10,9 @@ from wtforms.validators import InputRequired
 from PIL import Image
 from torchvision import transforms
 import io
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Import your existing AdaIN code
 from utils.models import VGGEncoder, Decoder
@@ -125,7 +129,9 @@ def index():
                     save_image(stylized_image, result_path)
 
                     result_image = result_filename
+                    logger.info(f"Style transfer complete: {result_filename}")
                 except Exception as e:
+                    logger.error(f"Style transfer error: {e}", exc_info=True)
                     error = str(e)
         else:
             # CSRF or form validation failed
