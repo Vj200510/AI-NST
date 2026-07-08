@@ -19,9 +19,11 @@ from utils.models import VGGEncoder, Decoder
 from utils.utils import adaptive_instance_normalization, calc_mean_std
 
 
-app = Flask(__name__)
+app = Flask(__name__,
+            template_folder=os.path.join(os.path.dirname(__file__), 'templates'),
+            static_folder=os.path.join(os.path.dirname(__file__), 'static'))
 app.config['SECRET_KEY'] = 'supersecretkey'
-app.config['UPLOAD_FOLDER'] = 'static/uploads'
+app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(__file__), 'static/uploads')
 app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg'}
 Bootstrap(app)
 
@@ -143,12 +145,12 @@ def index():
 
 @app.route('/uploads/<filename>')
 def send_image(filename):
-    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+    return send_from_directory(os.path.join(os.path.dirname(__file__), 'static/uploads'), filename)
 
 
 @app.route('/examples/<path:filename>')
 def send_example(filename):
-    return send_from_directory('examples', filename)
+    return send_from_directory(os.path.join(os.path.dirname(__file__), 'examples'), filename)
 
 
 if __name__ == '__main__':
