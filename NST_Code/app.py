@@ -51,7 +51,7 @@ logger.info(f'Using device: {device}')
 
 encoder = VGGEncoder(VGG_PATH).to(device)
 decoder = Decoder().to(device)
-decoder.load_state_dict(torch.load(DEC_PATH, map_location=device))
+decoder.load_state_dict(torch.load(DEC_PATH, map_location=device, weights_only=True))
 encoder.eval()
 decoder.eval()
 logger.info('Models loaded successfully')
