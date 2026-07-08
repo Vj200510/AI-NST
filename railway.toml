@@ -1,6 +1,6 @@
 [build]
 builder = "nixpacks"
-buildCommand = "cd NST_Code && bash build.sh"
+buildCommand = "pip install torch==2.5.0 torchvision==0.20.0 --index-url https://download.pytorch.org/whl/cpu && pip install -r NST_Code/requirements.txt && wget -q -O NST_Code/vgg_normalised.pth https://huggingface.co/Bunny6397/AI-NST/resolve/main/vgg_normalised.pth && mkdir -p NST_Code/experiment/final_exp && wget -q -O NST_Code/experiment/final_exp/decoder_final.pth https://huggingface.co/Bunny6397/AI-NST/resolve/main/decoder_final.pth"
 
 [deploy]
 startCommand = "cd NST_Code && gunicorn --bind 0.0.0.0:$PORT --workers 1 --timeout 600 app:app"
