@@ -1,7 +1,10 @@
 #!/bin/bash
 set -e
 
-# Install dependencies
+# Install CPU-only torch first (smaller, faster — no CUDA needed on Render)
+pip install torch==2.2.2 torchvision==0.17.2 --index-url https://download.pytorch.org/whl/cpu
+
+# Install remaining dependencies
 pip install -r requirements.txt
 
 # Download model weights from Hugging Face if not present
