@@ -1,6 +1,5 @@
 import os
 import logging
-import urllib.request
 import torch
 from flask import Flask, render_template, request, send_from_directory
 from flask_wtf import FlaskForm
@@ -21,19 +20,6 @@ BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
 VGG_PATH    = os.path.join(BASE_DIR, 'vgg_normalised.pth')
 DEC_PATH    = os.path.join(BASE_DIR, 'experiment', 'final_exp', 'decoder_final.pth')
 UPLOAD_DIR  = os.path.join(BASE_DIR, 'static', 'uploads')
-
-HF_BASE = 'https://huggingface.co/Bunny6397/AI-NST/resolve/main'
-
-def download_if_missing(path, url):
-    if not os.path.exists(path):
-        logger.info(f'Downloading {os.path.basename(path)} ...')
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        urllib.request.urlretrieve(url, path)
-        logger.info(f'Downloaded {os.path.basename(path)}')
-
-# Download models at startup if not present (handles Render ephemeral FS)
-download_if_missing(VGG_PATH, f'{HF_BASE}/vgg_normalised.pth')
-download_if_missing(DEC_PATH, f'{HF_BASE}/decoder_final.pth')
 
 # ── Flask app ──────────────────────────────────────────────────────────────────
 app = Flask(__name__,
