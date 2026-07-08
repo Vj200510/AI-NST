@@ -4,7 +4,7 @@ import uuid
 import logging
 import threading
 import torch
-from flask import Flask, render_template, request, send_from_directory, jsonify, redirect, url_for
+from flask import Flask, render_template, request, send_from_directory, jsonify
 from flask_wtf import FlaskForm
 from flask_bootstrap import Bootstrap
 from werkzeug.utils import secure_filename
@@ -32,7 +32,7 @@ app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg'}
 Bootstrap(app)
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# ── Load models once at startup ────────────────────────────────────────────────
+# ── Load models ────────────────────────────────────────────────────────────────
 device = torch.device('cpu')
 logger.info('Loading models...')
 encoder = VGGEncoder(VGG_PATH).to(device)
@@ -42,8 +42,7 @@ encoder.eval()
 decoder.eval()
 logger.info('Models ready')
 
-# ── In-memory job store ────────────────────────────────────────────────────────
-# { job_id: {'status': 'pending'|'done'|'error', 'result': filename, 'error': msg } }
+# ── Job store ──────────────────────────────────────────────────────────────────
 jobs = {}
 jobs_lock = threading.Lock()
 
@@ -63,7 +62,7 @@ def allowed_file(filename):
 # ── Background inference ───────────────────────────────────────────────────────
 def do_transfer(job_id, content_path, style_path, alpha):
     try:
-        tf = transforms.Compose([transforms.Resize(256), transforms.ToTensor()])
+        tf = transforms.Compose([transforms.Resize(512), transforms.ToTensor()])
         c_img = Image.open(content_path).convert('RGB')
         s_img = Image.open(style_path).convert('RGB')
         c = tf(c_img).unsqueeze(0)
@@ -73,12 +72,10 @@ def do_transfer(job_id, content_path, style_path, alpha):
             sf = encoder(s, is_test=True)
             out = alpha * adaptive_instance_normalization(cf, sf) + (1 - alpha) * cf
             result_tensor = decoder(out)
-        # Save result
         result_filename = 'stylized_' + os.path.basename(content_path)
         result_path = os.path.join(UPLOAD_DIR, result_filename)
         img = result_tensor.cpu().squeeze(0).clamp(0, 1)
         transforms.ToPILImage()(img).save(result_path, optimize=True, quality=85)
-        # Free memory
         del c, s, cf, sf, out, result_tensor, img
         gc.collect()
         with jobs_lock:
@@ -116,19 +113,17 @@ def index():
             elif not style_filename:
                 error = 'Please upload a style image.'
             else:
-                # Start background job — return immediately, no timeout
                 job_id = str(uuid.uuid4())
                 with jobs_lock:
                     jobs[job_id] = {'status': 'pending'}
-                t = threading.Thread(
+                threading.Thread(
                     target=do_transfer,
                     args=(job_id,
                           os.path.join(UPLOAD_DIR, content_filename),
                           os.path.join(UPLOAD_DIR, style_filename),
                           float(form.alpha.data)),
                     daemon=True
-                )
-                t.start()
+                ).start()
         else:
             error = 'Form submission failed. Please try again.'
 
@@ -156,5 +151,6 @@ def send_example(filename):
     return send_from_directory(os.path.join(BASE_DIR, 'examples'), filename)
 
 if __name__ == '__main__':
-    from werkzeug.serving import run_simple
-    run_simple('localhost', 8080, app, use_reloader=True, use_debugger=True)
+    # HF Spaces runs on port 7860
+    port = int(os.environ.get('PORT', 7860))
+    app.run(host='0.0.0.0', port=port, debug=False)
