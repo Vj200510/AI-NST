@@ -580,10 +580,65 @@
     </div>
     {% endif %}
 
+    <!-- Async result container (populated by JS polling) -->
+    <div class="row justify-content-center mt-5" id="asyncResult" style="display:none !important;"></div>
+
     {% if error %}
         <div class="alert alert-danger mt-4 text-center" role="alert" style="background: rgba(220, 38, 38, 0.2); border-color: #dc2626; color: #fecaca;">
             <strong>Error:</strong> {{ error }}
         </div>
+    {% endif %}
+
+    {% if job_id %}
+    <div id="processingCard" class="row justify-content-center mt-5">
+        <div class="col-md-8">
+            <div class="card text-center p-4">
+                <div class="cyber-spinner mx-auto mb-4"></div>
+                <h4 style="font-family:'Orbitron',sans-serif; color:#a855f7;">PROCESSING</h4>
+                <p class="text-muted">Neural Network is dreaming... please wait.</p>
+            </div>
+        </div>
+    </div>
+    <script>
+    (function(){
+        const jobId = "{{ job_id }}";
+        const poll = setInterval(function(){
+            fetch('/status/' + jobId)
+            .then(r => r.json())
+            .then(data => {
+                if(data.status === 'done'){
+                    clearInterval(poll);
+                    document.getElementById('processingCard').style.display = 'none';
+                    document.getElementById('asyncResult').style.cssText = '';
+                    document.getElementById('asyncResult').innerHTML = `
+                        <div class="col-md-8">
+                            <div class="card border-success">
+                                <div class="card-header fw-bold text-white text-center py-3"
+                                     style="background:linear-gradient(135deg,#10b981 0%,#059669 100%);">
+                                    Stylized Result
+                                </div>
+                                <div class="card-body p-0">
+                                    <img src="/uploads/${data.result}" class="img-fluid w-100"
+                                         alt="Stylized Image" style="border-radius:0 0 20px 20px;">
+                                </div>
+                                <div class="card-footer text-center"
+                                     style="background:transparent;border-top:none;padding-bottom:20px;">
+                                    <a href="/uploads/${data.result}" download
+                                       class="btn btn-outline-light mt-2">Download Result</a>
+                                </div>
+                            </div>
+                        </div>`;
+                    document.getElementById('asyncResult').scrollIntoView({behavior:'smooth'});
+                } else if(data.status === 'error'){
+                    clearInterval(poll);
+                    document.getElementById('processingCard').innerHTML =
+                        `<div class="col-md-8"><div class="alert alert-danger text-center">
+                         <strong>Error:</strong> ${data.error}</div></div>`;
+                }
+            });
+        }, 2000);
+    })();
+    </script>
     {% endif %}
 </div>
 
