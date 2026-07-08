@@ -1,8 +1,8 @@
 #!/bin/bash
 set -e
 
-# Install CPU-only torch (latest available on PyTorch CPU index)
-pip install torch==2.9.0 torchvision==0.20.0 --index-url https://download.pytorch.org/whl/cpu
+# Install CPU-only torch + torchvision (matched versions)
+pip install torch==2.5.0 torchvision==0.20.0 --index-url https://download.pytorch.org/whl/cpu
 
 # Install remaining dependencies
 pip install -r requirements.txt
