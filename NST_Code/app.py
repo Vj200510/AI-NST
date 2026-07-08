@@ -51,7 +51,7 @@ logger.info(f'Using device: {device}')
 
 encoder = VGGEncoder(VGG_PATH).to(device)
 decoder = Decoder().to(device)
-decoder.load_state_dict(torch.load(DEC_PATH, map_location=device, weights_only=True))
+decoder.load_state_dict(torch.load(DEC_PATH, map_location=device, weights_only=False))
 encoder.eval()
 decoder.eval()
 logger.info('Models loaded successfully')
@@ -71,7 +71,7 @@ def allowed_file(filename):
            filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
 
 def run_style_transfer(content_img, style_img, alpha):
-    tf = transforms.Compose([transforms.Resize(256), transforms.ToTensor()])
+    tf = transforms.Compose([transforms.Resize(128), transforms.ToTensor()])
     c = tf(content_img).unsqueeze(0).to(device)
     s = tf(style_img).unsqueeze(0).to(device)
     with torch.no_grad():

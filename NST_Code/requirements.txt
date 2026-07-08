@@ -7,3 +7,4 @@ tqdm==4.66.4
 Werkzeug==3.1.4
 WTForms==3.2.1
 gunicorn==21.2.0
+gevent==24.2.1
