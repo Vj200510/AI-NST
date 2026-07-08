@@ -1,112 +1,112 @@
 import os
 import logging
+import urllib.request
 import torch
-from flask import Flask, render_template, request, redirect, url_for, send_from_directory
+from flask import Flask, render_template, request, send_from_directory
 from flask_wtf import FlaskForm
 from flask_bootstrap import Bootstrap
 from werkzeug.utils import secure_filename
 from wtforms import FileField, SubmitField, FloatField, HiddenField
-from wtforms.validators import InputRequired
 from PIL import Image
 from torchvision import transforms
-import io
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Import your existing AdaIN code
 from utils.models import VGGEncoder, Decoder
-from utils.utils import adaptive_instance_normalization, calc_mean_std
+from utils.utils import adaptive_instance_normalization
 
+# ── Absolute paths relative to this file ──────────────────────────────────────
+BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
+VGG_PATH    = os.path.join(BASE_DIR, 'vgg_normalised.pth')
+DEC_PATH    = os.path.join(BASE_DIR, 'experiment', 'final_exp', 'decoder_final.pth')
+UPLOAD_DIR  = os.path.join(BASE_DIR, 'static', 'uploads')
 
+HF_BASE = 'https://huggingface.co/Bunny6397/AI-NST/resolve/main'
+
+def download_if_missing(path, url):
+    if not os.path.exists(path):
+        logger.info(f'Downloading {os.path.basename(path)} ...')
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        urllib.request.urlretrieve(url, path)
+        logger.info(f'Downloaded {os.path.basename(path)}')
+
+# Download models at startup if not present (handles Render ephemeral FS)
+download_if_missing(VGG_PATH, f'{HF_BASE}/vgg_normalised.pth')
+download_if_missing(DEC_PATH, f'{HF_BASE}/decoder_final.pth')
+
+# ── Flask app ──────────────────────────────────────────────────────────────────
 app = Flask(__name__,
-            template_folder=os.path.join(os.path.dirname(__file__), 'templates'),
-            static_folder=os.path.join(os.path.dirname(__file__), 'static'))
+            template_folder=os.path.join(BASE_DIR, 'templates'),
+            static_folder=os.path.join(BASE_DIR, 'static'))
 app.config['SECRET_KEY'] = 'supersecretkey'
-app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(__file__), 'static/uploads')
+app.config['UPLOAD_FOLDER'] = UPLOAD_DIR
 app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg'}
 Bootstrap(app)
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+# ── Load models ────────────────────────────────────────────────────────────────
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+logger.info(f'Using device: {device}')
 
-class UploadForm(FlaskForm):
-    content = FileField('Content Image')
-    style = FileField('Style Image')
-    content_path = HiddenField()
-    style_path = HiddenField()
-    alpha = FloatField('Alpha', default=1.0)
-    submit = SubmitField('Transfer Style')
-
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-encoder = VGGEncoder('vgg_normalised.pth').to(device)
+encoder = VGGEncoder(VGG_PATH).to(device)
 decoder = Decoder().to(device)
-decoder.load_state_dict(torch.load(os.path.join(os.path.dirname(__file__), 'experiment/final_exp/decoder_final.pth'), map_location=device))
-
+decoder.load_state_dict(torch.load(DEC_PATH, map_location=device))
 encoder.eval()
 decoder.eval()
+logger.info('Models loaded successfully')
 
+# ── Form ───────────────────────────────────────────────────────────────────────
+class UploadForm(FlaskForm):
+    content      = FileField('Content Image')
+    style        = FileField('Style Image')
+    content_path = HiddenField()
+    style_path   = HiddenField()
+    alpha        = FloatField('Alpha', default=1.0)
+    submit       = SubmitField('Transfer Style')
+
+# ── Helpers ────────────────────────────────────────────────────────────────────
 def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
 
-def style_transfer(content_image, style_image, encoder, decoder, alpha, device):
-    content_transform = transforms.Compose([
-        transforms.Resize(256),
-        transforms.ToTensor()
-    ])
-
-    style_transform = transforms.Compose([
-        transforms.Resize(256),
-        transforms.ToTensor()
-    ])
-    content_image = content_transform(content_image).unsqueeze(0).to(device)
-    style_image = style_transform(style_image).unsqueeze(0).to(device)
-
+def run_style_transfer(content_img, style_img, alpha):
+    tf = transforms.Compose([transforms.Resize(256), transforms.ToTensor()])
+    c = tf(content_img).unsqueeze(0).to(device)
+    s = tf(style_img).unsqueeze(0).to(device)
     with torch.no_grad():
-        content_feats = encoder(content_image, is_test=True)
-        style_feats = encoder(style_image, is_test=True)
+        cf = encoder(c, is_test=True)
+        sf = encoder(s, is_test=True)
+        out = alpha * adaptive_instance_normalization(cf, sf) + (1 - alpha) * cf
+        result = decoder(out)
+    return result
 
-        stylized_feats = adaptive_instance_normalization(content_feats, style_feats)
+def save_tensor_image(tensor, path):
+    img = tensor.cpu().squeeze(0).clamp(0, 1)
+    transforms.ToPILImage()(img).save(path, optimize=True, quality=85)
 
-        stylized_feats = alpha * stylized_feats + (1 - alpha) * content_feats
-
-        stylized_image = decoder(stylized_feats)
-
-    return stylized_image
-
-
-def save_image(image, path):
-    image = image.cpu().clone()
-    image = image.squeeze(0)
-    image = image.clamp(0, 1)
-    image = transforms.ToPILImage()(image)
-    image.save(path, optimize=True, quality=85)
-
-
-
+# ── Routes ─────────────────────────────────────────────────────────────────────
 @app.route('/', methods=['GET', 'POST'])
 def index():
     form = UploadForm()
-    result_image = None
-    content_filename = None
-    style_filename = None
-    error = None
+    result_image = content_filename = style_filename = error = None
 
     if request.method == 'POST':
         if form.validate_on_submit():
+            # Save content image
             if form.content.data and form.content.data.filename:
                 if allowed_file(form.content.data.filename):
                     content_filename = secure_filename(form.content.data.filename)
-                    form.content.data.save(os.path.join(app.config['UPLOAD_FOLDER'], content_filename))
+                    form.content.data.save(os.path.join(UPLOAD_DIR, content_filename))
                     form.content_path.data = content_filename
             else:
                 content_filename = form.content_path.data
 
+            # Save style image
             if form.style.data and form.style.data.filename:
                 if allowed_file(form.style.data.filename):
                     style_filename = secure_filename(form.style.data.filename)
-                    form.style.data.save(os.path.join(app.config['UPLOAD_FOLDER'], style_filename))
+                    form.style.data.save(os.path.join(UPLOAD_DIR, style_filename))
                     form.style_path.data = style_filename
             else:
                 style_filename = form.style_path.data
@@ -116,49 +116,35 @@ def index():
             elif not style_filename:
                 error = 'Please upload a style image.'
             else:
-                content_path = os.path.join(app.config['UPLOAD_FOLDER'], content_filename)
-                style_path = os.path.join(app.config['UPLOAD_FOLDER'], style_filename)
-
                 try:
-                    content_image = Image.open(content_path).convert('RGB')
-                    style_image = Image.open(style_path).convert('RGB')
-
-                    alpha = float(form.alpha.data)
-                    stylized_image = style_transfer(content_image, style_image, encoder, decoder, alpha, device)
-
+                    content_img = Image.open(os.path.join(UPLOAD_DIR, content_filename)).convert('RGB')
+                    style_img   = Image.open(os.path.join(UPLOAD_DIR, style_filename)).convert('RGB')
+                    alpha       = float(form.alpha.data)
+                    result      = run_style_transfer(content_img, style_img, alpha)
                     result_filename = 'stylized_' + content_filename
-                    result_path = os.path.join(app.config['UPLOAD_FOLDER'], result_filename)
-                    save_image(stylized_image, result_path)
-
+                    save_tensor_image(result, os.path.join(UPLOAD_DIR, result_filename))
                     result_image = result_filename
-                    logger.info(f"Style transfer complete: {result_filename}")
+                    logger.info(f'Style transfer done: {result_filename}')
                 except Exception as e:
-                    logger.error(f"Style transfer error: {e}", exc_info=True)
+                    logger.error(f'Style transfer error: {e}', exc_info=True)
                     error = str(e)
         else:
-            # CSRF or form validation failed
             error = 'Form submission failed. Please try again.'
 
-    return render_template('index.html', form=form, result_image=result_image, content_image=content_filename,
-                           style_image=style_filename, error=error)
-
+    return render_template('index.html', form=form,
+                           result_image=result_image,
+                           content_image=content_filename,
+                           style_image=style_filename,
+                           error=error)
 
 @app.route('/uploads/<filename>')
 def send_image(filename):
-    return send_from_directory(os.path.join(os.path.dirname(__file__), 'static/uploads'), filename)
-
+    return send_from_directory(UPLOAD_DIR, filename)
 
 @app.route('/examples/<path:filename>')
 def send_example(filename):
-    return send_from_directory(os.path.join(os.path.dirname(__file__), 'examples'), filename)
-
+    return send_from_directory(os.path.join(BASE_DIR, 'examples'), filename)
 
 if __name__ == '__main__':
     from werkzeug.serving import run_simple
     run_simple('localhost', 8080, app, use_reloader=True, use_debugger=True)
-
-
-
-
-
-
