@@ -1,0 +1,7 @@
+[build]
+builder = "nixpacks"
+buildCommand = "cd NST_Code && bash build.sh"
+
+[deploy]
+startCommand = "cd NST_Code && gunicorn --bind 0.0.0.0:$PORT --workers 1 --timeout 600 app:app"
+restartPolicyType = "on_failure"
